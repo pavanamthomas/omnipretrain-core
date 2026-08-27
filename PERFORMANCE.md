@@ -1,12 +1,7 @@
 # Performance
 
-Toy decoder on CPU. Regenerated with:
-
-```
-python -m optimization.benchmarker --out PERFORMANCE.md --batches 1,4,16,32,64
-```
-
-Do not compare these to A100 vendor slides. The same table is embedded in README.md.
+cpu numbers from `python -m optimization.benchmarker --out PERFORMANCE.md`.
+same table is in README. do not quote these next to an a100 run.
 
 <!-- omnipretrain:perf-table:begin -->
 Toy decoder throughput (cpu)
