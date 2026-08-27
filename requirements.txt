@@ -1,0 +1,15 @@
+# Runtime. Pin loosely; the CI image is CPU-only so bitsandbytes is optional there.
+torch>=2.2
+torchvision>=0.17
+transformers>=4.40
+aiohttp>=3.9
+bitsandbytes>=0.43
+wandb>=0.16
+prometheus_client>=0.20
+numpy>=1.24
+Pillow>=10.0
+tqdm>=4.66
+
+# tests
+pytest>=8.0
+pytest-asyncio>=0.23
