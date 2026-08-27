@@ -1,5 +1,14 @@
 # Changelog
 
+unreleased / 1.0.1
+
+- roadmap still said we fit T with LBFGS. we don't. grid on ECE.
+- README was a pipeline poster. stripped it.
+
+## 1.0.0
+
+tagged after the cpu suite + 2-proc ddp smoke passed.
+
 ## 0.4.4
 
 - Curriculum difficulty is text log-ppl + caption noise + a cheap image junk penalty (blank / salt / 8x8).

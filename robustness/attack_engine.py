@@ -1,10 +1,4 @@
-"""PGD on images + discrete token mutations for the robustness suite.
-
-Vision: standard L_inf PGD. Text: HotFlip-style greedy substitutions and
-cheap character noise. This is for measuring whether the fused VLM stays
-calibrated under perturbation, not for generating prompts against a hosted
-model.
-"""
+"""Linf PGD on images. Greedy / char edits on text. Not a jailbreak dump."""
 
 from __future__ import annotations
 

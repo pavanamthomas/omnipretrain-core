@@ -1,5 +1,7 @@
-# Tests
+pytest on cpu. no gpu, no wandb key.
 
-`pytest` on CPU. No GPU, no wandb key.
+spawn tests go through `run_local` (new processes). do not call
+init_process_group inside the pytest process — the next test inherits a
+dead group. see notes/fsdp_gotchas.md.
 
-If you add a spawn test, keep it behind `OMNI_SPAWN=1`. `init_process_group` inside the pytest process will poison later tests; see `notes/fsdp_gotchas.md`.
+`make test` is the whole suite. the ddp spawn case is a couple seconds.

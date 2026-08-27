@@ -1,20 +1,9 @@
 ---
-name: Bug
-about: Something is wrong
-labels: bug
+name: bug
 ---
 
-**What happened**
-<!-- stack trace or command + flags -->
+cmd:
 
-**What you expected**
+what you saw:
 
-**Machine**
-- GPU / CUDA:
-- torch:
-- world size:
-
-**Repro**
-```
-python -m ...
-```
+box (cpu/gpu, torch version):

@@ -1,16 +1,16 @@
 ---
-name: Training divergence
-about: Loss blew up, NaNs, or FSDP hang
-labels: training
+name: hang / nan / missing ckpt
+about: training-side
 ---
 
-**Symptom**
-- [ ] NaN loss
-- [ ] grad norm inf
-- [ ] hang on all_gather
-- [ ] checkpoint never lands
+command + flags:
 
-**Config**
-world_size / batch / activation ckpt / cpu offload:
+world size / batch / act ckpt on? / cpu or gpu:
 
-**Last good step**
+last good step:
+
+symptom
+- [ ] nan loss
+- [ ] grad inf
+- [ ] stuck on all_gather
+- [ ] ckpt file never showed up

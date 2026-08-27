@@ -1,10 +1,4 @@
-"""Step metrics -> Prometheus textfile + optional W&B.
-
-Cluster jobs already scrape node_exporter textfiles off the shared FS, so the
-primary sink is a .prom file, not an HTTP server. W&B is best-effort; if the
-key is missing we just skip it. I do not want training to die because a
-dashboard is down.
-"""
+"""prometheus textfile + optional wandb. wandb outages should not kill a run."""
 
 from __future__ import annotations
 

@@ -1,48 +1,33 @@
 # omnipretrain-core
 
-Training-time plumbing for a vision-language mix: ingest, curriculum, aspect-ratio batches, a local FSDP spawn, adversarial checks, then 4/8-bit wrap.
+Training-time bits for a vision-language mix. Not weights.
 
-It is not a foundation model. The `TinyVLM` in `training/distributed.py` exists so FSDP wrap, activation checkpointing, and the async saver have a graph that looks like the real one. Swap it for the model you actually train.
+I got tired of rewriting the same four pieces (ingest, ratio batches, a local
+FSDP/DDP spawn, then PGD + ECE) every time a new VLM run started, so they live
+here. `TinyVLM` in `training/distributed.py` is a stub transformer with a vision
+stem. It exists so wrap / activation checkpointing / the async saver have a
+real graph. Swap it.
 
-Longer notes live in [docs/design.md](docs/design.md) and [notes/fsdp_gotchas.md](notes/fsdp_gotchas.md). What is intentionally out of scope is in [ROADMAP.md](ROADMAP.md).
+CPU is enough for tests. You need a GPU for actual FSDP and for bitsandbytes
+NF4 that matches the CUDA kernels.
+
+```
+make test
+make train    # 2 proc. GPU -> FSDP, otherwise DDP+gloo
+```
+
+More commands under `python -m <module> --help`. `make bench` rewrites the
+table below (and the copy in PERFORMANCE.md).
 
 ## Layout
 
-```
-data/           URL fetch, perplexity curriculum, ratio buckets
-training/       FSDP spawn, background checkpoints, prometheus/wandb
-robustness/     L_inf PGD, token edits, ECE + temperature scaling
-optimization/   bitsandbytes wrap (CPU fake-quant fallback), latency table
-tests/          CPU suite; no GPU required
-```
-
-Each module has a CLI (`python -m … --help`) and a console script in `pyproject.toml` (`omni-stream`, `omni-train`, …).
-
-```
-URL list  ─┐
-           ├─ data.async_streamer ─► jsonl
-captions  ─┘         │
-                     ▼
-              data.curriculum  (easy → hard)
-                     │
-web images ─► data.bucketing  (pad, don't crop)
-                     │
-                     ▼
-           training.distributed  (FSDP + act. ckpt)
-                │            │
-                ▼            ▼
-     training.checkpoints   training.telemetry
-                │
-                ▼
-     robustness.attack_engine ─► robustness.calibration
-                │
-                ▼
-     optimization.quantizer ─► optimization.benchmarker
-```
+- `data/` — aiohttp fetch, n-gram curriculum, pad-to-fit buckets
+- `training/` — spawn harness, background ckpt thread, prometheus textfiles
+- `robustness/` — Linf PGD, token edits, ECE + temperature
+- `optimization/` — bnb wrap or fake quant, latency table
+- `notes/fsdp_gotchas.md` — read this before copying the spawn loop onto a node
 
 ## Setup
-
-Python 3.10+. CPU is enough for tests and the toy loop. A GPU is required for bitsandbytes NF4 that actually matches the CUDA kernels.
 
 ```bash
 python -m venv .venv
@@ -52,37 +37,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-`bitsandbytes` often fails to import on CPU. That is fine: `LinearQuantizer` reports `backend=fallback` and still swaps `nn.Linear`. Do not load those fake-quant weights on a GPU job.
+bnb import often dies on CPU. `LinearQuantizer` prints `backend=fallback` and
+keeps going. Those fake-quant weights will not load on a GPU job, don't try.
 
-W&B is optional. No key → no dashboard, training continues. Prometheus output is a textfile under `artifacts/metrics/rank{N}.prom` for the node_exporter textfile collector.
+W&B: no key, no dashboard, training does not care. Prometheus is a textfile in
+`artifacts/metrics/rankN.prom`.
 
-## Commands
+## What broke
 
-```bash
-# ingest a URL list (retries with full jitter, drops truncated/corrupt bodies)
-python -m data.async_streamer --urls data/fixtures/urls.txt --out artifacts/raw.jsonl
+- torch 2.13 FSDP: `needs a non-CPU accelerator`. CPU path is DDP now.
+- ECE last bin used to be half-open so conf=1.0 vanished. Closed it.
+- Async saver returned before the last `torch.save`. `flush()` on join.
+- Fitting T on NLL made ECE *worse* on the attacked set. Grid on ECE instead.
+- First CI job pulled the CUDA torch wheel and OOM'd. cpu index is pinned.
 
-# rank captions, reveal the harder third over epochs
-python -m data.curriculum --in data/fixtures/captions.jsonl --epoch 4 --max-epoch 10
-
-# dump bucket occupancy on synthetic images
-python -m data.bucketing --n 80 --out artifacts/buckets.json
-
-# 2-proc spawn (FSDP on GPU, DDP+gloo on CPU)
-python -m training.distributed --world_size 2 --steps 8 --port 29731
-
-python -m training.checkpoints smoke --out artifacts/ckpts
-python -m robustness.attack_engine --mode both
-python -m robustness.calibration --bins 15
-python -m optimization.quantizer --mode nf4 --no-bnb
-python -m optimization.benchmarker --out PERFORMANCE.md --batches 1,4,16,32,64
-```
-
-`make test` runs the CPU suite. `make train` / `make bench` wrap the two slow CLIs.
+Details in CHANGELOG.md / notes/.
 
 ## Performance
 
-Numbers below are the toy decoder on CPU, not an A100 run. Regenerated by `python -m optimization.benchmarker`.
+CPU toy decoder, not an A100. `python -m optimization.benchmarker` refreshes this.
 
 <!-- omnipretrain:perf-table:begin -->
 Toy decoder throughput (cpu)
@@ -97,15 +70,3 @@ _seq_len=32._
 | 32 | 0.9 | 29331.7 | 17.5 | 0.0 | cpu |
 | 64 | 1.3 | 36741.6 | 27.9 | 0.0 | cpu |
 <!-- omnipretrain:perf-table:end -->
-
-## Tests / CI
-
-```bash
-WANDB_MODE=disabled python -m pytest -q
-```
-
-GitHub Actions installs the CPU torch wheel. The CUDA wheel OOM'd the runner once; the cpu index is pinned in `.github/workflows/ci.yml` for that reason.
-
-## License
-
-Apache 2.0. See [CHANGELOG.md](CHANGELOG.md) for the mistakes that already shipped.
