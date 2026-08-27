@@ -10,7 +10,9 @@ torch 2.13 FSDP raises `needs a non-CPU accelerator device` if you wrap on CPU. 
 
 ## Wrap policy
 
-`ModuleWrapPolicy({CheckpointBlock})` is load-bearing. Wrapping the whole TinyVLM as one unit "works" and then you are not actually sharding the blocks. If `fwd` memory does not drop when you turn on activation checkpointing, you wrapped the wrong class.
+`ModuleWrapPolicy({CheckpointBlock})` has to wrap the block class, not TinyVLM.
+If you wrap the whole model you still "run FSDP" and then none of the blocks
+are actually sharded. If activation ckpt doesn't drop fwd memory, that's why.
 
 ## Memory barriers / collectives
 
