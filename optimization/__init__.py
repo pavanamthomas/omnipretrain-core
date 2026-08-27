@@ -1,0 +1,1 @@
+"""Linear compression and the latency table writer."""
