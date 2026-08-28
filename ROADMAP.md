@@ -6,11 +6,13 @@ scratch list so I stop arguing with myself in PR comments
 
 - ingest + full jitter + dropping truncated jpeg/html
 - n-gram rank + image junk penalty (blank/salt/8x8). distilgpt2 hook is there, too slow, off.
+- script_family gate so CJK captions are not ranked as OCR because the ref is english
 - ratio buckets, pad not crop. mixed-ratio collate raises now; used to silently pad twice
+- BucketBatchSampler strides by rank so epoch 0 is the same mix on 2 gpus
 - spawn: FSDP if cuda else DDP/gloo. act ckpt on CheckpointBlock
 - bg ckpt thread + flush on join (lost the last step once, see notes/lost-ckpt.md)
-- prometheus textfile, wandb if a key exists
-- PGD + greedy token edits
+- prometheus textfile, wandb if a key exists. jsonl rotates at 32MiB
+- PGD + greedy token edits. default eps 4/255 (screenshots are already jpeg)
 - ECE, last bin closed. T from a 1d grid on ECE, not NLL
 - 4/8bit wrap, fake quant when bnb won't import
 

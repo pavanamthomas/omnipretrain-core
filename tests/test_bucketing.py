@@ -4,6 +4,7 @@ import torch
 
 from data.bucketing import (
     AspectBucketDataset,
+    BucketBatchSampler,
     canonical_buckets,
     make_loader,
     nearest_bucket,
@@ -76,3 +77,34 @@ def test_collate_rejects_mixed_ratios() -> None:
         assert "mixed" in str(exc).lower()
         return
     raise AssertionError("mixed buckets should raise")
+
+
+def test_two_ranks_same_epoch_same_batch_count() -> None:
+    items = [(torch.rand(3, 64, 64), f"c{i}") for i in range(16)]
+    ds = AspectBucketDataset(items, short_side=32, buckets=((1, 1),))
+    a = BucketBatchSampler(ds, 2, shuffle=True, seed=7, num_replicas=2, rank=0)
+    b = BucketBatchSampler(ds, 2, shuffle=True, seed=7, num_replicas=2, rank=1)
+    a.set_epoch(3)
+    b.set_epoch(3)
+    ba, bb = list(a), list(b)
+    assert len(ba) == len(bb)
+    assert len(ba) == len(a)
+    assert len(bb) == len(b)
+
+
+def test_two_ranks_drop_last_disjoint() -> None:
+    items = [(torch.rand(3, 64, 64), f"c{i}") for i in range(20)]
+    ds = AspectBucketDataset(items, short_side=32, buckets=((1, 1),))
+    a = BucketBatchSampler(
+        ds, 2, shuffle=True, seed=11, drop_last=True, num_replicas=2, rank=0
+    )
+    b = BucketBatchSampler(
+        ds, 2, shuffle=True, seed=11, drop_last=True, num_replicas=2, rank=1
+    )
+    a.set_epoch(0)
+    b.set_epoch(0)
+    flat_a = [i for batch in a for i in batch]
+    flat_b = [i for batch in b for i in batch]
+    assert set(flat_a).isdisjoint(set(flat_b))
+    # both ranks must still step; otherwise DDP waits forever
+    assert flat_a and flat_b

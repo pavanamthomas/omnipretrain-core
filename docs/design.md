@@ -9,6 +9,10 @@ again; it raises now.
 streamer drops truncated/corrupt. curriculum only sorts. distilgpt2 scorer
 exists, leave it off.
 
+the char LM is fitted on english. CJK used to look like OOV soup. we now
+detect the script and substitute the ref's own mean ppl instead of the
+exploded nll. mixed alt-text still scores the latin residue.
+
 # ece after pgd
 
 fit T on the attacked logits. we used to fit on clean and report ece on

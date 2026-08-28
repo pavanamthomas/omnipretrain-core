@@ -2,6 +2,11 @@
 
 unreleased / 1.0.1
 
+- latin n-gram was shoving CJK captions past OCR junk. `script_family`
+  now skips that ppl (noise flags still apply).
+- BucketBatchSampler takes num_replicas/rank so two gpus agree on epoch 0.
+- jsonl rotates at 32MiB. a 50k-step file was ungrepable.
+- PGD default eps 4/255. 8/255 was washing already-jpeg screenshots.
 - roadmap still said we fit T with LBFGS. we don't. grid on ECE.
 - README was a pipeline poster. stripped it.
 

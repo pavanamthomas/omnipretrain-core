@@ -34,6 +34,61 @@ _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _WORD = re.compile(r"[A-Za-z0-9']+")
 _REPEAT = re.compile(r"(.{8,})\1{3,}")
 
+# CJK unified + ext-A + kana + hangul. not exhaustive, enough for the dump.
+_CJK_RANGES = (
+    (0x1100, 0x11FF),
+    (0x3040, 0x30FF),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xAC00, 0xD7AF),
+    (0xF900, 0xFAFF),
+)
+
+
+def _is_cjk_char(ch: str) -> bool:
+    o = ord(ch)
+    return any(lo <= o <= hi for lo, hi in _CJK_RANGES)
+
+
+def script_family(text: str) -> str:
+    """latin | cjk | other.
+
+    The English char-LM treats every CJK codepoint as unseen, so a fine
+    中文 / 日本語 caption used to land in the hard tail next to OCR junk.
+    Rankers that fitted on a latin dump should skip that ppl.
+    """
+    cjk = 0
+    latin = 0
+    other = 0
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        if _is_cjk_char(ch):
+            cjk += 1
+        elif ch.isascii():
+            latin += 1
+        else:
+            other += 1
+    n = cjk + latin + other
+    if n == 0:
+        return "other"
+    if cjk / n >= 0.4:
+        return "cjk"
+    if latin / n >= 0.5:
+        return "latin"
+    return "other"
+
+
+def latin_residue(text: str) -> str:
+    """Keep ascii letters so bilingual alt-text still has something to score."""
+    kept: list[str] = []
+    for ch in text:
+        if ch.isascii() and (ch.isalpha() or ch.isspace() or ch in ".,'-"):
+            kept.append(ch)
+        elif not ch.isascii() and ch.isspace():
+            kept.append(" ")
+    return " ".join("".join(kept).split())
+
 
 class Scorer(Protocol):
     def log_perplexity(self, text: str) -> float: ...
@@ -176,16 +231,27 @@ class NGramReference:
         self.bi: Counter[tuple[str, str]] = Counter()
         self._n = 0
         self._fitted = False
+        self._ref_script = "latin"
+        # stand-in ppl when the query is a different script than the ref.
+        # overwritten after fit() from the ref itself.
+        self._cross_script_ppl = 8.0
 
     def fit(self, texts: Iterable[str]) -> "NGramReference":
+        held: list[str] = []
         for text in texts:
             padded = f"\n{text}\n"
             self.uni.update(padded)
             self._n += len(padded)
             self.bi.update(zip(padded, padded[1:]))
+            if len(held) < 48:
+                held.append(text)
         if self._n == 0:
             raise ValueError("empty reference corpus")
         self._fitted = True
+        scripts = [script_family(t) for t in held if any(ch.isalpha() for ch in t)]
+        if scripts:
+            self._ref_script = Counter(scripts).most_common(1)[0][0]
+        self._cross_script_ppl = sum(self._nll(t) if t else 20.0 for t in held) / len(held)
         return self
 
     def _uni_p(self, ch: str) -> float:
@@ -199,9 +265,7 @@ class NGramReference:
         cond = (self.bi[(prev, ch)] + self.k) / denom
         return lam * cond + (1.0 - lam) * self._uni_p(ch)
 
-    def log_perplexity(self, text: str) -> float:
-        if not self._fitted:
-            raise RuntimeError("call fit() first")
+    def _nll(self, text: str) -> float:
         if not text:
             return 20.0
         padded = f"\n{text}\n"
@@ -214,6 +278,19 @@ class NGramReference:
             prev = ch
             toks += 1
         return nll / max(toks, 1)
+
+    def log_perplexity(self, text: str) -> float:
+        if not self._fitted:
+            raise RuntimeError("call fit() first")
+        if not text:
+            return 20.0
+        fam = script_family(text)
+        if fam not in {"other", self._ref_script}:
+            residue = latin_residue(text)
+            if len(residue) >= 24:
+                return self._nll(residue)
+            return self._cross_script_ppl
+        return self._nll(text)
 
 
 class TransformerReference:

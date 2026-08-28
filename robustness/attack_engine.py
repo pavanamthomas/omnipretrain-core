@@ -18,6 +18,11 @@ import torch.nn.functional as F
 
 LOG = logging.getLogger("omni.attack")
 
+# ImageNet 8/255 on already-jpeg screenshots was washing the image.
+# 4/255 is the number we actually want on this mix; 8/255 stays available.
+DEFAULT_PGD_EPS = 4 / 255
+DEFAULT_PGD_STEP = 1 / 255
+
 
 class AttackError(RuntimeError):
     pass
@@ -47,8 +52,8 @@ class PGDAttack:
     def __init__(
         self,
         *,
-        eps: float = 8 / 255,
-        step_size: float = 2 / 255,
+        eps: float = DEFAULT_PGD_EPS,
+        step_size: float = DEFAULT_PGD_STEP,
         steps: int = 10,
         clamp: tuple[float, float] = (0.0, 1.0),
         random_start: bool = True,
@@ -262,7 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Run PGD or token-mutation smoke tests.")
     p.add_argument("--mode", choices=("pgd", "token", "both"), default="both")
     p.add_argument("--steps", type=int, default=8)
-    p.add_argument("--eps", type=float, default=8 / 255)
+    p.add_argument("--eps", type=float, default=DEFAULT_PGD_EPS)
     p.add_argument("--out", type=Path, default=Path("artifacts/attacks.json"))
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

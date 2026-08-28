@@ -175,24 +175,34 @@ class BucketBatchSampler(Sampler[list[int]]):
         drop_last: bool = False,
         shuffle: bool = True,
         seed: int = 0,
+        num_replicas: int = 1,
+        rank: int = 0,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
+        if num_replicas < 1:
+            raise ValueError("num_replicas must be >= 1")
+        if not 0 <= rank < num_replicas:
+            raise ValueError("rank must be in [0, num_replicas)")
         self.dataset = dataset
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
+        self.num_replicas = num_replicas
+        self.rank = rank
         self._epoch = 0
 
     def set_epoch(self, epoch: int) -> None:
         self._epoch = epoch
 
-    def __iter__(self) -> Iterator[list[int]]:
+    def _global_batches(self) -> list[list[int]]:
         rng = random.Random(self.seed + self._epoch)
         batches: list[list[int]] = []
-        for _bucket, idxs in self.dataset.bucket_index().items():
-            order = list(idxs)
+        # sort buckets so rank 0 and rank 1 walk the same order before shuffle
+        index = self.dataset.bucket_index()
+        for bucket in sorted(index, key=lambda b: (b[0], b[1])):
+            order = list(index[bucket])
             if self.shuffle:
                 rng.shuffle(order)
             for start in range(0, len(order), self.batch_size):
@@ -202,7 +212,36 @@ class BucketBatchSampler(Sampler[list[int]]):
                 batches.append(chunk)
         if self.shuffle:
             rng.shuffle(batches)
-        yield from batches
+        return batches
+
+    def _even_batches(self) -> list[list[int]]:
+        """Same length on every rank. DDP hangs if one rank runs short.
+
+        drop_last=True truncates. otherwise we repeat from the front, same
+        as DistributedSampler, so the last step may duplicate a batch.
+        """
+        batches = self._global_batches()
+        if self.num_replicas == 1:
+            return batches
+        if not batches:
+            return []
+        extra = len(batches) % self.num_replicas
+        if extra == 0:
+            return batches
+        if self.drop_last:
+            return batches[: len(batches) - extra]
+        pad = self.num_replicas - extra
+        out = list(batches)
+        i = 0
+        while pad:
+            out.append(batches[i % len(batches)])
+            i += 1
+            pad -= 1
+        return out
+
+    def __iter__(self) -> Iterator[list[int]]:
+        batches = self._even_batches()
+        yield from batches[self.rank :: self.num_replicas]
 
     def __len__(self) -> int:
         n = 0
@@ -211,7 +250,14 @@ class BucketBatchSampler(Sampler[list[int]]):
                 n += len(idxs) // self.batch_size
             else:
                 n += int(math.ceil(len(idxs) / self.batch_size))
-        return n
+        if self.num_replicas == 1:
+            return n
+        if n == 0:
+            return 0
+        if self.drop_last:
+            n = n - (n % self.num_replicas)
+            return n // self.num_replicas
+        return int(math.ceil(n / self.num_replicas))
 
 
 def collate_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:

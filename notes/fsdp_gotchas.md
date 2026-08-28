@@ -31,7 +31,7 @@ Gradient accumulation has the same trap: `no_sync()` on FSDP delays the reduce-s
 
 - Mixed CPU offload + CUDA params: grads land on cpu, the next FSDP hook tries to view them as cuda. Pick one.
 - `use_orig_params=True` plus activation checkpointing on the same block double-wraps the param handle. Memory looks fine until step 2.
-- Uneven last batch with drop_last=False: one rank runs a smaller micro-batch, FSDP still expects matching all-gather sizes. TinyVLM's fake batch is fixed per rank to avoid that. A real dataloader needs a `DistributedSampler` with `drop_last=True` or a dummy pad.
+- Uneven last batch with drop_last=False: one rank runs a smaller micro-batch, FSDP still expects matching all-gather sizes. TinyVLM's fake batch is fixed per rank to avoid that. A real dataloader should use `BucketBatchSampler(..., num_replicas=world, rank=rank)` (it pads or drop_lasts so both ranks step) or a `DistributedSampler` with `drop_last=True`.
 
 ## CPU offload
 

@@ -68,12 +68,18 @@ class Telemetry:
         out_dir: Path | str,
         prefix: str = "omni_train",
         wandb_project: str | None = None,
+        max_jsonl_bytes: int = 32 * 1024 * 1024,
+        jsonl_keep: int = 3,
     ) -> None:
         self.rank = rank
         self.world_size = world_size
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.prefix = prefix
+        if jsonl_keep < 1:
+            raise ValueError("jsonl_keep must be >= 1")
+        self.max_jsonl_bytes = max_jsonl_bytes
+        self.jsonl_keep = jsonl_keep
         self.bundle = MetricsBundle()
         self._t0 = time.perf_counter()
         self._prom_path = self.out_dir / f"rank{rank}.prom"
@@ -85,6 +91,32 @@ class Telemetry:
         mode = os.environ.get("WANDB_MODE", "")
         if project and mode != "disabled" and rank == 0:
             self._wandb = _try_wandb(project)
+
+    def _rotate_jsonl_if_needed(self) -> None:
+        """Size-cap the append-only jsonl. 50k steps without this is ungrepable.
+
+        Rotated files are rankN.jsonl.1 (newest) .. .jsonl_keep (oldest).
+        max_jsonl_bytes <= 0 disables rotation.
+        """
+        if self.max_jsonl_bytes <= 0:
+            return
+        self._jsonl.flush()
+        try:
+            size = self._jsonl_path.stat().st_size
+        except OSError:
+            return
+        if size < self.max_jsonl_bytes:
+            return
+        self._jsonl.close()
+        oldest = Path(f"{self._jsonl_path}.{self.jsonl_keep}")
+        if oldest.exists():
+            oldest.unlink()
+        for i in range(self.jsonl_keep - 1, 0, -1):
+            src = Path(f"{self._jsonl_path}.{i}")
+            if src.exists():
+                src.rename(Path(f"{self._jsonl_path}.{i + 1}"))
+        self._jsonl_path.rename(Path(f"{self._jsonl_path}.1"))
+        self._jsonl = self._jsonl_path.open("a", encoding="utf-8")
 
     def log_step(
         self,
@@ -107,6 +139,7 @@ class Telemetry:
             wall_s=time.perf_counter() - self._t0,
         )
         self.bundle.rows.append(row)
+        self._rotate_jsonl_if_needed()
         self._jsonl.write(json.dumps(asdict(row)) + "\n")
         self._jsonl.flush()
         lab = {"rank": str(self.rank), "world": str(self.world_size)}

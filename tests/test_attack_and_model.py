@@ -3,7 +3,13 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from robustness.attack_engine import PGDAttack, TinyImageClassifier, TokenMutationAttack, char_noise
+from robustness.attack_engine import (
+    DEFAULT_PGD_EPS,
+    PGDAttack,
+    TinyImageClassifier,
+    TokenMutationAttack,
+    char_noise,
+)
 from training.distributed import TinyVLM, TrainConfig
 
 
@@ -47,3 +53,10 @@ def test_tiny_vlm_backward() -> None:
     grads = [p.grad is not None for p in model.parameters() if p.requires_grad]
     assert any(grads)
     assert logits.shape == (2, 8, cfg.vocab)
+
+
+def test_pgd_default_eps_is_screenshot_scale() -> None:
+    atk = PGDAttack()
+    assert abs(atk.eps - 4 / 255) < 1e-12
+    assert abs(atk.eps - DEFAULT_PGD_EPS) < 1e-12
+    assert atk.eps < 8 / 255

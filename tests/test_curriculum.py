@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from data.curriculum import CurriculumEngine, NGramReference, inspect_noise
+from data.curriculum import CurriculumEngine, NGramReference, inspect_noise, script_family
 
 
 def test_easy_before_hard() -> None:
@@ -58,4 +58,27 @@ def test_blank_image_ranks_harder() -> None:
     assert ranked[0].image_noise is not None and ranked[1].image_noise is not None
     assert ranked[1].score >= ranked[0].score
     assert ranked[1].image_noise.blank >= ranked[0].image_noise.blank
+
+
+def test_cjk_not_exiled_by_english_ngram() -> None:
+    ref = [
+        "A red bicycle leans against a brick wall at dusk.",
+        "Two people sit on a bench facing a small lake.",
+        "A calico cat sleeps on a stack of newspapers.",
+        "Close-up of a ceramic bowl filled with rice and scallions.",
+        "The storefront has gold lettering and a striped awning.",
+    ]
+    scorer = NGramReference().fit(ref)
+    assert scorer._ref_script == "latin"
+    engine = CurriculumEngine(scorer)
+    easy = "A red bicycle leans against a brick wall at dusk."
+    cjk = "赤い自転車が夕暮れのレンガ壁に立てかけてある。二人の人が小さな湖の前のベンチに座っている。"
+    ocr = "xqz vrml fhtagn 0xdeadbeef <div><div><div>aaaa"
+    assert script_family(cjk) == "cjk"
+    ranked = engine.rank([ocr, cjk, easy])
+    by = {s.text: s for s in ranked}
+    # CJK must not sit past OCR just because every codepoint is unseen
+    assert ranked[-1].text == ocr
+    assert by[cjk].log_ppl < by[ocr].log_ppl
+    assert abs(by[cjk].log_ppl - scorer._cross_script_ppl) < 1e-9
 

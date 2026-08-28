@@ -45,6 +45,7 @@ W&B: no key, no dashboard, training does not care. Prometheus is a textfile in
 
 ## What broke
 
+- latin n-gram was shoving CJK captions past OCR junk. `script_family` skips that ppl.
 - torch 2.13 FSDP: `needs a non-CPU accelerator`. CPU path is DDP now.
 - ECE last bin used to be half-open so conf=1.0 vanished. Closed it.
 - Async saver returned before the last `torch.save`. `flush()` on join.
