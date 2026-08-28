@@ -13,6 +13,8 @@
   DDP unless `device_count() >= world_size`.
 - loader test was asserting `shape[2] == shape[2]`. sampler batches are
   checked against the bucket index now.
+- CI on every tag replayed v0.1.0-alpha (no tests, exit 5). push is
+  `main` only.
 
 ## 1.0.0
 

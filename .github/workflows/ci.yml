@@ -2,6 +2,7 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 # CPU-only. The CUDA torch wheel OOM'd the 14GB runner the first time this
