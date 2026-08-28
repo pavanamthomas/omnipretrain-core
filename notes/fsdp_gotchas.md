@@ -6,7 +6,7 @@ I keep hitting the same things when I try to make this look like the cluster job
 
 NCCL on a machine with no visible GPU leaves zombie processes. gloo is slow and that is the point of this file: we are testing wrap + checkpointing, not allreduce speed.
 
-torch 2.13 FSDP raises `needs a non-CPU accelerator device` if you wrap on CPU. The spawn harness therefore DDP+gloo when `cuda.is_available()` is false. Do not read a CPU DDP run as an FSDP sharding result.
+torch 2.13 FSDP raises `needs a non-CPU accelerator device` if you wrap on CPU. The spawn harness therefore DDP+gloo when there is no GPU, and also when `world_size` is larger than `device_count()` — `make train` is two procs; one laptop GPU used to put both ranks on device 0 and hang inside the wrap. Do not read a CPU (or 1-GPU/2-proc) DDP run as an FSDP sharding result.
 
 ## Wrap policy
 

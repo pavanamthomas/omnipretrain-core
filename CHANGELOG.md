@@ -1,6 +1,6 @@
 # Changelog
 
-unreleased / 1.0.1
+## 1.0.1
 
 - latin n-gram was shoving CJK captions past OCR junk. `script_family`
   now skips that ppl (noise flags still apply).
@@ -9,6 +9,10 @@ unreleased / 1.0.1
 - PGD default eps 4/255. 8/255 was washing already-jpeg screenshots.
 - roadmap still said we fit T with LBFGS. we don't. grid on ECE.
 - README was a pipeline poster. stripped it.
+- `make train` on one GPU used to FSDP-wrap both ranks onto device 0.
+  DDP unless `device_count() >= world_size`.
+- loader test was asserting `shape[2] == shape[2]`. sampler batches are
+  checked against the bucket index now.
 
 ## 1.0.0
 

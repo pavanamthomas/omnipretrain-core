@@ -41,10 +41,8 @@ def test_loader_never_mixes_buckets() -> None:
     seen = 0
     for batch in loader:
         seen += 1
-        b = batch["bucket"]
-        assert all(row == b for row in [b])
-        # every image in the tensor has the same H,W
-        assert batch["image"].shape[2] == batch["image"].shape[2]
+        assert isinstance(batch["bucket"], tuple)
+        assert len(batch["caption"]) == batch["image"].shape[0]
         h = batch["image"].shape[2]
         w = batch["image"].shape[3]
         for i in range(batch["image"].shape[0]):
@@ -108,3 +106,24 @@ def test_two_ranks_drop_last_disjoint() -> None:
     assert set(flat_a).isdisjoint(set(flat_b))
     # both ranks must still step; otherwise DDP waits forever
     assert flat_a and flat_b
+
+
+def test_sampler_batches_are_one_bucket() -> None:
+    items = [
+        (torch.rand(3, h, w), f"c{i}")
+        for i, (h, w) in enumerate(
+            [(64, 64), (64, 64), (48, 80), (48, 80), (80, 48), (80, 48)]
+        )
+    ]
+    ds = AspectBucketDataset(items, short_side=32, buckets=canonical_buckets())
+    which: dict[int, tuple[int, int]] = {}
+    for bucket, idxs in ds.bucket_index().items():
+        for i in idxs:
+            which[i] = bucket
+    sampler = BucketBatchSampler(ds, 2, shuffle=True, seed=3)
+    n = 0
+    for batch in sampler:
+        n += 1
+        buckets = {which[i] for i in batch}
+        assert len(buckets) == 1, buckets
+    assert n >= 2

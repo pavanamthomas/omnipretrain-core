@@ -155,23 +155,40 @@ def _vram_mb() -> float:
     return torch.cuda.max_memory_allocated() / (1024**2)
 
 
+def _n_cuda() -> int:
+    if not torch.cuda.is_available():
+        return 0
+    return int(torch.cuda.device_count())
+
+
+def use_fsdp(world_size: int, n_gpu: int) -> bool:
+    """One visible GPU per rank. Two ranks on device 0 deadlock the wrap."""
+    return n_gpu >= world_size and world_size >= 1
+
+
 def _wrap_model(model: nn.Module, cfg: TrainConfig) -> nn.Module:
-    """FSDP when there is a GPU. torch 2.13 refuses FSDP on CPU
-    (``needs a non-CPU accelerator``); we DDP+gloo there so the spawn
-    harness still runs on a laptop.
+    """FSDP when every rank owns a GPU.
+
+    torch 2.13 raises ``needs a non-CPU accelerator`` on CPU. ``make train``
+    is world_size=2; a laptop with one GPU used to put both ranks on
+    device 0 and hang inside FSDP. DDP+gloo covers those cases.
     """
     wrap = ModuleWrapPolicy({CheckpointBlock})
-    if torch.cuda.is_available():
+    n_gpu = _n_cuda()
+    if use_fsdp(cfg.world_size, n_gpu):
         device_id = torch.cuda.current_device()
         model = model.to(device_id)
-        fsdp_kw: dict[str, Any] = {
-            "auto_wrap_policy": wrap,
-            "device_id": device_id,
-        }
-        return FSDP(model, **fsdp_kw)
-    LOG.warning(
-        "no accelerator; FSDP is GPU-only in this torch build, using DDP(gloo)"
-    )
+        return FSDP(model, auto_wrap_policy=wrap, device_id=device_id)
+    if n_gpu:
+        LOG.warning(
+            "%d gpu(s) for world_size=%d; FSDP wants one device per rank, using DDP",
+            n_gpu,
+            cfg.world_size,
+        )
+    else:
+        LOG.warning(
+            "no accelerator; FSDP is GPU-only in this torch build, using DDP(gloo)"
+        )
     return nn.parallel.DistributedDataParallel(model)
 
 
@@ -182,8 +199,10 @@ def _worker(rank: int, cfg: TrainConfig) -> None:
     )
     _init_dist(rank, cfg.world_size, cfg.backend, cfg.master_port)
     torch.manual_seed(cfg.seed + rank)
-    if torch.cuda.is_available():
-        torch.cuda.set_device(rank % max(torch.cuda.device_count(), 1))
+    n_gpu = _n_cuda()
+    fsdp = use_fsdp(cfg.world_size, n_gpu)
+    if fsdp:
+        torch.cuda.set_device(rank)
     model = TinyVLM(cfg)
     model = _wrap_model(model, cfg)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, betas=(0.9, 0.95))
@@ -198,7 +217,7 @@ def _worker(rank: int, cfg: TrainConfig) -> None:
         for step in range(cfg.steps):
             t0 = time.perf_counter()
             images, tokens = _fake_batch(cfg, rank, step)
-            if torch.cuda.is_available():
+            if fsdp:
                 images = images.cuda()
                 tokens = tokens.cuda()
             logits = model(images, tokens)

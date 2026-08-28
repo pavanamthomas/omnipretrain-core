@@ -34,7 +34,7 @@ LOG = logging.getLogger("omni.stream")
 # Drop anything smaller than this; it's almost always an error page stub.
 _MIN_HTML_BYTES = 256
 _MIN_IMAGE_BYTES = 64
-_DEFAULT_UA = "omnipretrain-core/0.4 (+research ingest; contact via repo issues)"
+_DEFAULT_UA = "omnipretrain-core/1.0 (+research ingest; contact via repo issues)"
 
 
 class StreamError(RuntimeError):

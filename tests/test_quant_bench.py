@@ -68,6 +68,6 @@ def test_benchmarker_writes_table(tmp_path: Path) -> None:
     assert "tok/s" in text
     assert "omnipretrain:perf-table:begin" in text
     upsert_markdown(md, render_table(rows))
-    assert text.count("omnipretrain:perf-table:begin") == 1 or (
-        md.read_text(encoding="utf-8").count("omnipretrain:perf-table:begin") == 1
-    )
+    twice = md.read_text(encoding="utf-8")
+    assert twice.count("omnipretrain:perf-table:begin") == 1
+    assert twice.count("omnipretrain:perf-table:end") == 1
